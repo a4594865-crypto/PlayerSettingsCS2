@@ -1,9 +1,12 @@
-name: Plugin builder and release
+name: PlayerSettings build and release
 
 on:
-  push:
+  pull_request:
     branches: [ "main" ]
-  workflow_dispatch:      # 🎯 讓你在 GitHub 網頁上可以隨時手動點擊按鈕編譯
+  release:
+    types:
+      - created
+  workflow_dispatch:
 
 jobs:
   build:
@@ -17,23 +20,34 @@ jobs:
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 10.0.x
-          dotnet-quality: 'preview' # 🎯 確保完美對齊你伺服器的 .NET 10 環境
+          dotnet-quality: 'preview' # 🎯 確保順利調用 .NET 10 環境
       
       - name: Restore dependencies
-        run: dotnet restore
-      
-      - name: Build
-        # 🎯 強迫關閉獨立全家桶，並且不複製多餘檔案，確保只產出最純淨的 3 個檔案
-        run: dotnet build PlayerSettingsCS2.csproj -c Release -o ./PlayerSettingsCS2 --no-self-contained -p:CopyLocalLockFileAssemblies=false
-
-      - name: Create release asset
-        # 🎯 進到資料夾裡把本體、PDB、JSON 一起打包
         run: |
-          cd PlayerSettingsCS2 && zip -r ../PlayerSettingsCS2.zip ./* && cd ..
+          dotnet restore PlayerSettingsApi/PlayerSettingsApi.csproj
+          dotnet restore PlayerSettings/PlayerSettings.csproj
+      
+      # 🎯 修正 1：編譯 API，並加上防線參數，輸出至特定暫存區
+      - name: Build PlayerSettingsApi
+        run: |
+          dotnet build PlayerSettingsApi/PlayerSettingsApi.csproj -c Release --no-restore --no-self-contained -p:CopyLocalLockFileAssemblies=false
 
-      - name: Upload Artifact
-        # 🎯 只要綠燈一亮，你點進 Actions 紀錄的最下方（Artifacts）就能直接下載
-        uses: actions/upload-artifact@v4
+      # 🎯 修正 2：編編譯主插件，並且直接指定輸出路徑為 CounterStrikeSharp 標準的插件目錄結構！
+      # 這樣會自動在雲端建立好 addons/counterstrikesharp/plugins/PlayerSettings/ 資料夾，並把最乾淨的 3 個檔案吐進去
+      - name: Build PlayerSettings
+        run: |
+          dotnet build PlayerSettings/PlayerSettings.csproj -c Release --no-restore -o ./addons/counterstrikesharp/plugins/PlayerSettings --no-self-contained -p:CopyLocalLockFileAssemblies=false
+
+      # 🎯 修正 3：因為上面已經把檔案乖乖吐進 ./addons/ 了，這裡的 zip 就能完美抓到東西打包！
+      - name: Create release asset
+        if: github.event_name == 'release'
+        run: zip -r PlayerSettings-${{ github.event.release.tag_name }}.zip ./addons/
+
+      - name: Upload release asset
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v2
         with:
-          name: PlayerSettingsCS2-官方純淨版
-          path: ./PlayerSettingsCS2.zip
+          files: |
+            ./PlayerSettings-${{ github.event.release.tag_name }}.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
