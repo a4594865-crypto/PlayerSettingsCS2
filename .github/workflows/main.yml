@@ -1,0 +1,39 @@
+name: Plugin builder and release
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:      # 🎯 讓你在 GitHub 網頁上可以隨時手動點擊按鈕編譯
+
+jobs:
+  build:
+    permissions: write-all
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+          dotnet-quality: 'preview' # 🎯 確保完美對齊你伺服器的 .NET 10 環境
+      
+      - name: Restore dependencies
+        run: dotnet restore
+      
+      - name: Build
+        # 🎯 強迫關閉獨立全家桶，並且不複製多餘檔案，確保只產出最純淨的 3 個檔案
+        run: dotnet build PlayerSettingsCS2.csproj -c Release -o ./PlayerSettingsCS2 --no-self-contained -p:CopyLocalLockFileAssemblies=false
+
+      - name: Create release asset
+        # 🎯 進到資料夾裡把本體、PDB、JSON 一起打包
+        run: |
+          cd PlayerSettingsCS2 && zip -r ../PlayerSettingsCS2.zip ./* && cd ..
+
+      - name: Upload Artifact
+        # 🎯 只要綠燈一亮，你點進 Actions 紀錄的最下方（Artifacts）就能直接下載
+        uses: actions/upload-artifact@v4
+        with:
+          name: PlayerSettingsCS2-官方純淨版
+          path: ./PlayerSettingsCS2.zip
